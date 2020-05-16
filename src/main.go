@@ -84,6 +84,7 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 	queries, ok := r.URL.Query()["q"]
 	if !ok || len(queries[0]) < 1 {
 		log.Println("Url Param 'q' is missing")
+		w.Write([]byte("[]"))
 		return
 	}
 	q := queries[0]
