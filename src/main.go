@@ -1,11 +1,11 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
-	"io/ioutil"
+	"explore/cache"
 	"log"
 	"net/http"
-	"net/url"
 	"regexp"
 
 	"github.com/valyala/fastjson"
@@ -17,6 +17,11 @@ type wikiResult struct {
 	Size      int    `json:"size"`
 	WordCount int    `json:"wordcount"`
 	Snippet   string `json:"snippet"`
+}
+
+type searchQuery struct {
+	Query   string       `json:"query"`
+	Results []wikiResult `json:"results"`
 }
 
 func (w *wikiResult) Clean() {
@@ -47,30 +52,6 @@ func getResults(s string) []wikiResult {
 	return results
 }
 
-func search(q string) []wikiResult {
-	base, err := url.Parse("https://en.wikipedia.org/w/api.php")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	params := url.Values{"action": {"query"}, "format": {"json"}, "list": {"search"}, "srsearch": {q}}
-	base.RawQuery = params.Encode()
-
-	log.Println("Searching for", q)
-
-	resp, err := http.Get(base.String())
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	return getResults(string(body))
-}
-
 func jsonify(v interface{}) []byte {
 	j, err := json.Marshal(v)
 	if err != nil {
@@ -81,6 +62,12 @@ func jsonify(v interface{}) []byte {
 
 // SearchHandler handler for search
 func SearchHandler(w http.ResponseWriter, r *http.Request) {
+
+	if r.Method != "GET" {
+		http.Error(w, http.StatusText(405), 405)
+		return
+	}
+
 	queries, ok := r.URL.Query()["q"]
 	if !ok || len(queries[0]) < 1 {
 		log.Println("Url Param 'q' is missing")
@@ -88,11 +75,26 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := queries[0]
-	results := search(string(q))
-	w.Write(jsonify(results))
+
+	//check the cache first
+	ctx := r.Context()
+	present, items := cache.Check(ctx, q)
+
+	var results []byte
+	if !present {
+		res := search(ctx, string(q))
+		sq := searchQuery{Query: q, Results: res}
+		cache.Add(ctx, q, sq)
+		results = jsonify(sq)
+	} else {
+		results = jsonify(items)
+	}
+
+	w.Write(results)
 }
 
 func main() {
+	cache.Init(context.Background())
 	http.HandleFunc("/search", SearchHandler)
 	http.ListenAndServe(":8000", nil)
 }
