@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -22,7 +21,7 @@ type wikiResult struct {
 
 func (w *wikiResult) Clean() {
 	// remove all the tags
-	exp := regexp.MustCompile(`<.*>`)
+	exp := regexp.MustCompile(`<[^>]*>`)
 	w.Snippet = exp.ReplaceAllString(w.Snippet, "")
 }
 
@@ -48,16 +47,12 @@ func getResults(s string) []wikiResult {
 	return results
 }
 
-func main() {
-
+func search(q string) []wikiResult {
 	base, err := url.Parse("https://en.wikipedia.org/w/api.php")
 	if err != nil {
-		return
+		log.Fatal(err)
 	}
 
-	q := "Perito Moreno"
-
-	// Query params
 	params := url.Values{"action": {"query"}, "format": {"json"}, "list": {"search"}, "srsearch": {q}}
 	base.RawQuery = params.Encode()
 
@@ -73,12 +68,30 @@ func main() {
 		log.Fatal(err)
 	}
 
-	results := getResults(string(body))
+	return getResults(string(body))
+}
 
-	j, err := json.Marshal(results)
+func jsonify(v interface{}) []byte {
+	j, err := json.Marshal(v)
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println(string(j))
+	return j
+}
 
+// SearchHandler handler for search
+func SearchHandler(w http.ResponseWriter, r *http.Request) {
+	queries, ok := r.URL.Query()["q"]
+	if !ok || len(queries[0]) < 1 {
+		log.Println("Url Param 'q' is missing")
+		return
+	}
+	q := queries[0]
+	results := search(string(q))
+	w.Write(jsonify(results))
+}
+
+func main() {
+	http.HandleFunc("/search", SearchHandler)
+	http.ListenAndServe(":8000", nil)
 }
