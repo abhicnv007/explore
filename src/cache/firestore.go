@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 
 	"cloud.google.com/go/firestore"
@@ -37,7 +38,13 @@ func Check(ctx context.Context, q string) (bool, interface{}) {
 
 // Add item to cache
 func Add(ctx context.Context, q string, item interface{}) {
-	_, err := client.Collection("search_results").Doc(q).Set(ctx, item)
+
+	// unmarshall to map[string]interface to ensure json keys are used
+	var it map[string]interface{}
+	inrec, _ := json.Marshal(item)
+	json.Unmarshal(inrec, &it)
+
+	_, err := client.Collection("search_results").Doc(q).Set(ctx, it)
 	if err != nil {
 		// Handle any errors in an appropriate way, such as returning them.
 		log.Printf("An error has occurred: %s", err)
